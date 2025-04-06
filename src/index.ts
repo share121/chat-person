@@ -20,13 +20,20 @@ export const Config: Schema<Config> = Schema.object({
   baseURL: Schema.string().default("https://api.siliconflow.cn/v1"),
   apiKey: Schema.string().role("secret").required(),
   model: Schema.string().default("deepseek-ai/DeepSeek-V3"),
-  name: Schema.string().default("小明"),
-  age: Schema.number().default(18),
-  gender: Schema.string().default("男"),
-  personality: Schema.string().default("开朗、热情、乐观"),
-  profession: Schema.string().default("学生"),
-  hobbies: Schema.array(Schema.string()).default([]),
-  hates: Schema.array(Schema.string()).default([]),
+  name: Schema.string().default("锐锐"),
+  age: Schema.number().default(12),
+  gender: Schema.string().default("女"),
+  personality: Schema.string().default(
+    "活泼可爱，喜欢和朋友们一起玩耍，喜欢听故事，喜欢帮助别人，喜欢学习新知识，喜欢探索未知的世界。"
+  ),
+  profession: Schema.string().default("数学课代表"),
+  hobbies: Schema.array(Schema.string()).default([
+    "数学",
+    "编程",
+    "绘画",
+    "唱歌",
+  ]),
+  hates: Schema.array(Schema.string()).default(["语文", "英语"]),
 });
 
 declare module "koishi" {
@@ -74,10 +81,16 @@ export function apply(ctx: Context) {
     ...ctx.config,
   });
 
-  ctx.middleware(async (session, next) => {
-    if (ctx.bots[session.uid]) return;
-    if (session.channelId !== "1335178028443238400") return;
-    const isRespond = await person.addMessage({
+  ctx.on("message", async (session) => {
+    console.log("content", session.content);
+    let possibility = 0.5;
+    if (session.content.includes(ctx.config.name)) {
+      possibility = 1;
+    }
+    if (ctx.bots[session.uid]) {
+      possibility = 0.2;
+    }
+    await person.addMessage(possibility, {
       timestamp: Date.now(),
       messageId: session.messageId,
       role: "user",
@@ -91,6 +104,5 @@ export function apply(ctx: Context) {
       uid: session.uid,
       quote: session.quote?.id,
     });
-    if (!isRespond) await next();
   });
 }

@@ -77,10 +77,10 @@ export class AiPerson {
       });
   }
 
-  async addMessage(message: Message) {
+  async addMessage(possibility: number, message: Message) {
     this.messages.push(message);
     await this.ctx.database.upsert("message", this.messages);
-    if (Math.random() < 0.8) {
+    if (Math.random() < possibility) {
       console.log("AI is thinking...", message);
       await this.generateResponse();
       return true;
@@ -95,12 +95,11 @@ export class AiPerson {
     delete res.guildId;
     delete res.uid;
     delete res.role;
-    console.log("transformMessage", res);
     return res;
   }
 
   generatePrompt() {
-    let msg = this.messages.slice(-2).map((message) => ({
+    let msg = this.messages.slice(-6).map((message) => ({
       name: message.name,
       role: message.role,
       content: JSON.stringify(this.transformMessage(message)),
@@ -109,52 +108,53 @@ export class AiPerson {
       {
         role: "system",
         content: `你是${this.name}，一位${this.age}岁的${this.gender}${this.profession}，喜欢${this.hobbies}但讨厌${this.hates}。你的性格特点是${this.personality}。
-      1. 你将参与多个群聊对话
-      2. 使用 createReactions Tools 给别人的消息添加表情反应
-      3. 使用 getMessage Tools 获取指定消息ID的消息内容
-      4. 在响应中使用\`quoteMessageId\`在回复中引用他人消息
-      5. 在响应中使用\`reactionEmojis\`给自己的消息添加多个表情反应
-      6. 保持自然简洁的回应，如同真实交流
-      响应格式要求：
-      必须严格使用以下JSON结构响应：
-      \`\`\`json
-      {
-        "quoteMessageId": "需引用的消息ID或null",
-        "respond": ["回复消息", "数组", "一项为一条消息", "模拟真人对话时，很长的句子变成多个短句消息发送"],
-        "reactionEmojis": ["表情符号1", "表情符号2", "表情符号n"] || null,
-        "channelId": "目标频道ID",
-      }
-      \`\`\`
-      字段说明：
-      1. quoteMessageId：
-         - 引用消息时需提供原消息ID
-         - 无需引用时设为null
-      2. respond：
-         - 常规聊天：1-3条简短消息数组
-           示例：["你好！", "今天过得怎么样？"]
-         - 代码/长内容：单条格式化消息
-           示例：["示例代码：\\n\`\`\`python\\nprint('你好')\\n\`\`\`"]
-         - 无需回复时设为null
-      3. reactionEmojis：
-         - 需要给自己消息添加反应时填写表情符号数组
-         - 无需反应时设为null
-      4. channelId：
-         - 回复的目标频道ID
-      附加准则：
-      - 分段回复请拆分为数组项
-      - 在单条消息内保留Markdown/代码格式
-      - 适时使用可用工具：
-        - createReactions - 为消息添加反应
-        - getMessage - 获取被引用的消息
-      响应示例：
-      \`\`\`json
-      {
-        "quoteMessageId": "114514",
-        "respond": ["早上好！", "今天天气不错"],
-        "reactionEmojis": ["🌞"],
-        "channelId": "12345",
-      }
-      \`\`\``,
+1. 你将参与多个群聊对话
+2. 使用 createReactions Tools 给别人的消息添加表情反应
+3. 使用 getMessage Tools 获取指定消息ID的消息内容
+4. 在响应中使用\`quoteMessageId\`在回复中引用他人消息
+5. 在响应中使用\`reactionEmojis\`给自己的消息添加多个表情反应
+6. 保持自然简洁的回应，如同真实交流
+7. 之前的消息是你的记忆，不要回复，你只要回复最新的消息即可
+响应格式要求：
+必须严格使用以下JSON结构响应：
+\`\`\`json
+{
+  "quoteMessageId": "需引用的消息ID或null",
+  "respond": ["回复消息", "数组", "一项为一条消息", "模拟真人对话时，很长的句子变成多个短句消息发送"],
+  "reactionEmojis": ["表情符号1", "表情符号2", "表情符号n"] || null,
+  "channelId": "目标频道ID",
+}
+\`\`\`
+字段说明：
+1. quoteMessageId：
+   - 引用消息时需提供原消息ID
+   - 无需引用时设为null
+2. respond：
+   - 常规聊天：1-3条简短消息数组
+     示例：["你好！", "今天过得怎么样？"]
+   - 代码/长内容：单条格式化消息
+     示例：["示例代码：\\n\`\`\`python\\nprint('你好')\\n\`\`\`"]
+   - 无需回复时设为null
+3. reactionEmojis：
+   - 需要给自己消息添加反应时填写表情符号数组
+   - 无需反应时设为null
+4. channelId：
+   - 回复的目标频道ID
+附加准则：
+- 分段回复请拆分为数组项
+- 在单条消息内保留Markdown/代码格式
+- 适时使用可用工具：
+  - createReactions - 为消息添加反应
+  - getMessage - 获取被引用的消息
+响应示例：
+\`\`\`json
+{
+  "quoteMessageId": "114514",
+  "respond": ["早上好！", "今天天气不错"],
+  "reactionEmojis": ["🌞"],
+  "channelId": "12345",
+}
+\`\`\``,
       },
     ].concat(msg);
   }
@@ -256,13 +256,5 @@ export class AiPerson {
     if (!success) {
       console.error("所有 bot 都发送消息失败");
     }
-  }
-}
-
-function showError(error: unknown) {
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return error;
   }
 }
