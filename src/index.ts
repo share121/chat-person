@@ -1,6 +1,7 @@
 import { Context, Schema } from "koishi";
 import { AiPerson, Message } from "./ai";
 import { getChannel, getGuild, getUser } from "./tools";
+import {} from "@koishijs/plugin-adapter-discord";
 
 export const name = "chat-person";
 export const inject = ["database"];
@@ -17,9 +18,9 @@ export interface Config {
   hates: string[];
 }
 export const Config: Schema<Config> = Schema.object({
-  baseURL: Schema.string().default("https://api.siliconflow.cn/v1"),
+  baseURL: Schema.string().default("https://api.deepseek.com"),
   apiKey: Schema.string().role("secret").required(),
-  model: Schema.string().default("deepseek-ai/DeepSeek-V3"),
+  model: Schema.string().default("deepseek-chat"),
   name: Schema.string().default("锐锐"),
   age: Schema.number().default(12),
   gender: Schema.string().default("女"),
@@ -83,17 +84,20 @@ export function apply(ctx: Context) {
 
   ctx.on("message", async (session) => {
     console.log("content", session.content);
-    let possibility = 0.5;
-    if (session.content.includes(ctx.config.name)) {
+    let possibility = 0.45;
+    if (
+      session.content.includes(ctx.config.name) ||
+      session.content.includes(session.bot.userId)
+    ) {
       possibility = 1;
     }
     if (ctx.bots[session.uid]) {
-      possibility = 0.2;
+      possibility = 0;
     }
-    await person.addMessage(possibility, {
+    const isResponding = await person.addMessage(possibility, {
       timestamp: Date.now(),
       messageId: session.messageId,
-      role: "user",
+      role: session.userId === session.bot.userId ? "assistant" : "user",
       content: session.content,
       name: (await getUser(session))?.nick || session.username || "匿名用户",
       userId: session.userId,
@@ -104,5 +108,8 @@ export function apply(ctx: Context) {
       uid: session.uid,
       quote: session.quote?.id,
     });
+    if (isResponding && session.discord) {
+      session.discord.triggerTypingIndicator(session.channelId);
+    }
   });
 }

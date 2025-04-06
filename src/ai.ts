@@ -1,8 +1,9 @@
 import { Context, h } from "koishi";
 import OpenAI from "openai";
 import { ChatCompletionMessageParam } from "openai/resources/index.mjs";
-import { zodFunction, zodResponseFormat } from "openai/helpers/zod.mjs";
+import { zodFunction } from "openai/helpers/zod.mjs";
 import { z } from "zod";
+import { guess } from "./tools";
 
 export type Message = {
   timestamp: number;
@@ -82,7 +83,7 @@ export class AiPerson {
     await this.ctx.database.upsert("message", this.messages);
     if (Math.random() < possibility) {
       console.log("AI is thinking...", message);
-      await this.generateResponse();
+      this.generateResponse();
       return true;
     }
     return false;
@@ -99,11 +100,14 @@ export class AiPerson {
   }
 
   generatePrompt() {
-    let msg = this.messages.slice(-6).map((message) => ({
+    let msg = this.messages.slice(-6).map((message, i, arr) => ({
       name: message.name,
       role: message.role,
-      content: JSON.stringify(this.transformMessage(message)),
+      content:
+        JSON.stringify(this.transformMessage(message)) +
+        (i !== arr.length - 1 ? "，约束：这是上下文内容，请勿回复" : ""),
     }));
+
     return [
       {
         role: "system",
@@ -111,10 +115,10 @@ export class AiPerson {
 1. 你将参与多个群聊对话
 2. 使用 createReactions Tools 给别人的消息添加表情反应
 3. 使用 getMessage Tools 获取指定消息ID的消息内容
-4. 在响应中使用\`quoteMessageId\`在回复中引用他人消息
-5. 在响应中使用\`reactionEmojis\`给自己的消息添加多个表情反应
-6. 保持自然简洁的回应，如同真实交流
-7. 之前的消息是你的记忆，不要回复，你只要回复最新的消息即可
+4. 使用 searchAbbreviations Tools 查询指定消息内容中的缩写含义
+5. 在响应中使用\`quoteMessageId\`在回复中引用他人消息
+6. 在响应中使用\`reactionEmojis\`给自己的消息添加多个表情反应
+7. 保持自然简洁的回应，如同真实交流
 响应格式要求：
 必须严格使用以下JSON结构响应：
 \`\`\`json
@@ -130,11 +134,10 @@ export class AiPerson {
    - 引用消息时需提供原消息ID
    - 无需引用时设为null
 2. respond：
-   - 常规聊天：1-3条简短消息数组
+   - 常规聊天：一般为1-2条简短消息数组，可根据实际情况调整
      示例：["你好！", "今天过得怎么样？"]
-   - 代码/长内容：单条格式化消息
+   - 代码/带有格式内容：仅仅在代码内容中不要分段回复，其他地方可以分段回复
      示例：["示例代码：\\n\`\`\`python\\nprint('你好')\\n\`\`\`"]
-   - 无需回复时设为null
 3. reactionEmojis：
    - 需要给自己消息添加反应时填写表情符号数组
    - 无需反应时设为null
@@ -143,9 +146,10 @@ export class AiPerson {
 附加准则：
 - 分段回复请拆分为数组项
 - 在单条消息内保留Markdown/代码格式
-- 适时使用可用工具：
+- 适时使用可用工具(不要滥用)：
   - createReactions - 为消息添加反应
   - getMessage - 获取被引用的消息
+  - searchAbbreviations - 查询缩写含义
 响应示例：
 \`\`\`json
 {
@@ -218,8 +222,29 @@ export class AiPerson {
               };
             },
           }),
+          zodFunction({
+            name: "searchAbbreviations",
+            description:
+              '传入一个数组的缩写，如 ["dl", "wsfw"] 即可获得对应的意思',
+            parameters: z.object({
+              abbreviations: z.array(z.string()),
+            }),
+            function: async ({ abbreviations }) => {
+              try {
+                let res = {};
+                for (const abbr of abbreviations) {
+                  res[abbr] = await guess(abbr);
+                }
+                return { success: true, data: res };
+              } catch (e) {
+                return { error: e };
+              }
+            },
+          }),
         ],
-        response_format: zodResponseFormat(ChatRespond, "chat_respond"),
+        text: {
+          format: { type: "json_object" },
+        },
       })
       .on("functionCall", (functionCall) =>
         console.log("functionCall", functionCall)
@@ -229,7 +254,7 @@ export class AiPerson {
       )
       .on("content", (diff) => process.stdout.write(diff));
     const result = await runner.finalChatCompletion();
-    const parsed = result.choices[0].message.parsed;
+    const parsed = this.parseJson(result.choices[0].message.content);
     console.log("reply", parsed);
     let res = parsed.respond.map((msg) => h("message", msg));
     if (parsed.quoteMessageId) {
@@ -256,5 +281,11 @@ export class AiPerson {
     if (!success) {
       console.error("所有 bot 都发送消息失败");
     }
+  }
+
+  parseJson(raw: string) {
+    const start = raw.indexOf("{");
+    const end = raw.lastIndexOf("}") + 1;
+    return JSON.parse(raw.slice(start, end));
   }
 }

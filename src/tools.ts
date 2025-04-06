@@ -51,3 +51,26 @@ export async function getUser(session: Session<never, never, Context>) {
     return null;
   }
 }
+
+export type GuessRecord = {
+  name: string;
+  trans?: string[];
+  inputting?: string[];
+};
+
+const cache = new Map<string, GuessRecord[]>();
+export async function guess(text: string): Promise<GuessRecord[]> {
+  text = text.match(/[a-z0-9]{2,}/gi).join(",");
+  if (cache.has(text)) {
+    return cache.get(text)!;
+  }
+  const res = await (
+    await fetch("https://lab.magiconch.com/api/nbnhhsh/guess", {
+      method: "POST",
+      body: JSON.stringify({ text }),
+      headers: { "Content-Type": "application/json" },
+    })
+  ).json();
+  cache.set(text, res);
+  return res;
+}
