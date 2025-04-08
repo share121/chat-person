@@ -17,8 +17,8 @@ export interface Config {
   gender: string;
   personality: string;
   profession: string;
-  hobbies: string[];
-  hates: string[];
+  hobbies: string;
+  hates: string;
 }
 export const Config: Schema<Config> = Schema.intersect([
   Schema.object({
@@ -48,12 +48,8 @@ export const Config: Schema<Config> = Schema.intersect([
       )
       .description("性格"),
     profession: Schema.string().default("数学课代表").description("职业"),
-    hobbies: Schema.array(Schema.string())
-      .default(["数学", "编程", "绘画", "唱歌"])
-      .description("爱好"),
-    hates: Schema.array(Schema.string())
-      .default(["语文", "英语"])
-      .description("讨厌的事物"),
+    hobbies: Schema.string().default("数学,编程,绘画,唱歌").description("爱好"),
+    hates: Schema.string().default("语文,英语").description("讨厌的事物"),
   }).description("人格设置"),
   // Schema.object({}).description("高级配置"),
 ]);

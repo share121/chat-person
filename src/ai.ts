@@ -43,8 +43,8 @@ export class AiPerson {
   gender: string;
   personality: string;
   profession: string;
-  hobbies: string[];
-  hates: string[];
+  hobbies: string;
+  hates: string;
   model: string;
   baseURL: string;
   apiKey: string;
