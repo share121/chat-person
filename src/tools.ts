@@ -16,8 +16,7 @@ export async function getChannel(session: Session<never, never, Context>) {
     const channel = await session.bot.getChannel(session.channelId);
     channelCache.set(session.channelId, channel);
     return channel;
-  } catch (e) {
-    console.error(e);
+  } catch {
     return null;
   }
 }
@@ -31,8 +30,7 @@ export async function getGuild(session: Session<never, never, Context>) {
     const guild = await session.bot.getGuild(session.guildId);
     guildCache.set(session.guildId, guild);
     return guild;
-  } catch (e) {
-    console.error(e);
+  } catch {
     return null;
   }
 }
@@ -46,8 +44,7 @@ export async function getUser(session: Session<never, never, Context>) {
     const user = await session.bot.getUser(session.userId);
     userCache.set(session.userId, user);
     return user;
-  } catch (e) {
-    console.error(e);
+  } catch {
     return null;
   }
 }

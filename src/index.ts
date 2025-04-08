@@ -1,4 +1,4 @@
-import { Context, Schema } from "koishi";
+import { Context, Schema, Session } from "koishi";
 import { AiPerson, Message } from "./ai";
 import { getChannel, getGuild, getUser } from "./tools";
 import {} from "@koishijs/plugin-adapter-discord";
@@ -9,6 +9,8 @@ export interface Config {
   baseURL: string;
   apiKey: string;
   model: string;
+  fitCtxSize: number;
+  maxCtxSize: number;
   name: string;
   age: number;
   gender: string;
@@ -21,6 +23,8 @@ export const Config: Schema<Config> = Schema.object({
   baseURL: Schema.string().default("https://api.deepseek.com"),
   apiKey: Schema.string().role("secret").required(),
   model: Schema.string().default("deepseek-chat"),
+  fitCtxSize: Schema.number().default(3),
+  maxCtxSize: Schema.number().default(6),
   name: Schema.string().default("锐锐"),
   age: Schema.number().default(12),
   gender: Schema.string().default("女"),
@@ -44,6 +48,7 @@ declare module "koishi" {
 }
 
 export function apply(ctx: Context) {
+  // ctx.model.drop("message");
   ctx.model.extend(
     "message",
     {
@@ -71,6 +76,7 @@ export function apply(ctx: Context) {
         type: "string",
         nullable: true,
       },
+      needReply: "boolean",
     },
     {
       primary: "timestamp",
@@ -82,18 +88,35 @@ export function apply(ctx: Context) {
     ...ctx.config,
   });
 
-  ctx.on("message", async (session) => {
-    console.log("content", session.content);
-    let possibility = 0.45;
+  let possibility = 0.3;
+  let cache: Map<string, { session: Session; timer: NodeJS.Timeout }> =
+    new Map();
+  ctx.on("message", (session) => {
+    cache.set(session.messageId, {
+      session,
+      timer: setTimeout(async () => {
+        cache.delete(session.messageId);
+        await add(session);
+      }, 1000),
+    });
+  });
+  ctx.on("message-updated", (session) => {
+    if (cache.has(session.messageId)) {
+      const item = cache.get(session.messageId);
+      item.timer.refresh();
+    }
+  });
+
+  async function add(session: Session) {
+    possibility -= 0.1;
+    if (possibility < 0.3) possibility = 0.3;
     if (
       session.content.includes(ctx.config.name) ||
       session.content.includes(session.bot.userId)
-    ) {
+    )
       possibility = 1;
-    }
-    if (ctx.bots[session.uid]) {
-      possibility = 0;
-    }
+    if (ctx.bots[session.uid]) possibility = 0;
+    console.log(possibility, session.content);
     const isResponding = await person.addMessage(possibility, {
       timestamp: Date.now(),
       messageId: session.messageId,
@@ -107,9 +130,13 @@ export function apply(ctx: Context) {
       guildId: session.guildId,
       uid: session.uid,
       quote: session.quote?.id,
+      needReply: session.userId !== session.bot.userId,
     });
-    if (isResponding && session.discord) {
-      session.discord.triggerTypingIndicator(session.channelId);
+    if (isResponding) {
+      if (possibility < 0.5) possibility = 1;
+      if (session.discord) {
+        session.discord.triggerTypingIndicator(session.channelId);
+      }
     }
-  });
+  }
 }

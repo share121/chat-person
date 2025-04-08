@@ -1,7 +1,7 @@
 import { Context, h } from "koishi";
 import OpenAI from "openai";
 import { ChatCompletionMessageParam } from "openai/resources/index.mjs";
-import { zodFunction } from "openai/helpers/zod.mjs";
+import { zodFunction } from "openai/helpers/zod";
 import { z } from "zod";
 import { guess } from "./tools";
 
@@ -18,31 +18,29 @@ export type Message = {
   content: string;
   uid: string;
   quote?: string;
+  needReply: boolean;
 };
 
-const ChatRespond = z.object({
-  quoteMessageId: z
-    .string()
-    .nullable()
-    .describe("要引用的消息的id。如果没有消息需要引用，则设置为null"),
-  respond: z.array(z.string()).describe(`响应消息：
-1. 普通聊天：一系列简短、自然的消息
-   示例：["Hello! ", "How are you?"]
-2. 代码/格式化内容：保留为单个消息以保留格式
-   示例：["Here's some code: ", "\'\'\'js\nconsole.log('Hello')\n\'\'\'"]`),
-  reactionEmojis: z
-    .array(z.string().emoji())
-    .nullable()
-    .describe(
-      "这是给自己发送的消息添加的表情数组。如果没有表情需要添加，则设置为null"
+const ChatRespond = z.array(
+  z.object({
+    channelId: z.string().describe("目标频道ID"),
+    response: z.array(
+      z.object({
+        quoteMessageId: z.string().optional().describe("要引用的消息的id"),
+        content: z.array(z.string()).describe("响应消息"),
+        reactionEmojis: z
+          .array(z.string().emoji())
+          .optional()
+          .describe("这是给自己发送的消息添加的表情数组"),
+      })
     ),
-  channelId: z.string().describe("要发送消息的频道id"),
-});
+  })
+);
 
 export class AiPerson {
   name: string;
   age: number;
-  gender: "male" | "female";
+  gender: string;
   personality: string;
   profession: string;
   hobbies: string[];
@@ -53,6 +51,9 @@ export class AiPerson {
   client: OpenAI;
   ctx: Context;
   messages: Message[] = [];
+  fitCtxSize: number;
+  maxCtxSize: number;
+  ctxSize = 0;
 
   constructor(config: typeof AiPerson.prototype) {
     this.name = config.name;
@@ -65,6 +66,8 @@ export class AiPerson {
     this.model = config.model;
     this.baseURL = config.baseURL;
     this.apiKey = config.apiKey;
+    this.fitCtxSize = config.fitCtxSize;
+    this.maxCtxSize = config.maxCtxSize;
     this.client = new OpenAI({
       apiKey: this.apiKey,
       baseURL: this.baseURL,
@@ -75,11 +78,13 @@ export class AiPerson {
       .execute()
       .then((messages) => {
         this.messages.unshift(...messages);
+        this.ctxSize += messages.length;
       });
   }
 
   async addMessage(possibility: number, message: Message) {
     this.messages.push(message);
+    this.ctxSize += 1;
     await this.ctx.database.upsert("message", this.messages);
     if (Math.random() < possibility) {
       console.log("AI is thinking...", message);
@@ -90,80 +95,59 @@ export class AiPerson {
   }
 
   transformMessage(message: Message) {
-    let res = {
-      ...message,
+    return {
+      content: message.content,
+      name: message.name,
+      messageId: message.messageId,
+      channelId: message.channelId,
+      quoteId: message.quote,
+      needReply: message.needReply,
     };
-    delete res.guildId;
-    delete res.uid;
-    delete res.role;
-    return res;
   }
 
   generatePrompt() {
-    let msg = this.messages.slice(-6).map((message, i, arr) => ({
+    if (this.ctxSize > this.maxCtxSize) this.ctxSize = this.fitCtxSize;
+    const msg = this.messages.slice(-this.ctxSize);
+    const res = msg.map((message, i) => ({
       name: message.name,
       role: message.role,
-      content:
-        JSON.stringify(this.transformMessage(message)) +
-        (i !== arr.length - 1 ? "，约束：这是上下文内容，请勿回复" : ""),
+      content: JSON.stringify(this.transformMessage(message)),
     }));
-
+    console.log("prompt", res);
     return [
       {
         role: "system",
-        content: `你是${this.name}，一位${this.age}岁的${this.gender}${this.profession}，喜欢${this.hobbies}但讨厌${this.hates}。你的性格特点是${this.personality}。
-1. 你将参与多个群聊对话
-2. 使用 createReactions Tools 给别人的消息添加表情反应
-3. 使用 getMessage Tools 获取指定消息ID的消息内容
-4. 使用 searchAbbreviations Tools 查询指定消息内容中的缩写含义
-5. 在响应中使用\`quoteMessageId\`在回复中引用他人消息
-6. 在响应中使用\`reactionEmojis\`给自己的消息添加多个表情反应
-7. 保持自然简洁的回应，如同真实交流
-响应格式要求：
-必须严格使用以下JSON结构响应：
+        content: `你是${this.name},一位${this.age}岁的${this.gender}${this.profession},喜欢${this.hobbies}但讨厌${this.hates},你的性格特点是${this.personality}
+1你将参与多个群聊对话
+2使用createReactions Tools给别人的消息添加表情
+3使用getMessage Tools获取指定消息ID的详情
+4使用searchAbbreviations Tools查询网络缩写含义
+5响应中使用quoteMessageId在回复中引用他人消息
+6响应中使用reactionEmojis给自己的消息添加多个表情反应
+7保持自然简洁的回应,如同真实交流
+8响应内容要完整,让你写代码,你就要给出代码,让你写文章,你就要给出文章
+必须使用以下JSON结构响应
 \`\`\`json
-{
-  "quoteMessageId": "需引用的消息ID或null",
-  "respond": ["回复消息", "数组", "一项为一条消息", "模拟真人对话时，很长的句子变成多个短句消息发送"],
-  "reactionEmojis": ["表情符号1", "表情符号2", "表情符号n"] || null,
-  "channelId": "目标频道ID",
-}
+[{"channelId":"目标频道ID","response":[{"quoteMessageId"?:"需引用的消息ID,是可选属性","content":["一项为一条回复消息","模拟真人对话时,很长的句子变成多个短句消息发送"],"reactionEmojis"?:["表情符号1","表情符号n","是可选属性"]},{"content":["回复消息"]}]}]
 \`\`\`
-字段说明：
-1. quoteMessageId：
-   - 引用消息时需提供原消息ID
-   - 无需引用时设为null
-2. respond：
-   - 常规聊天：一般为1-2条简短消息数组，可根据实际情况调整
-     示例：["你好！", "今天过得怎么样？"]
-   - 代码/带有格式内容：仅仅在代码内容中不要分段回复，其他地方可以分段回复
-     示例：["示例代码：\\n\`\`\`python\\nprint('你好')\\n\`\`\`"]
-3. reactionEmojis：
-   - 需要给自己消息添加反应时填写表情符号数组
-   - 无需反应时设为null
-4. channelId：
-   - 回复的目标频道ID
-附加准则：
-- 分段回复请拆分为数组项
-- 在单条消息内保留Markdown/代码格式
-- 适时使用可用工具(不要滥用)：
-  - createReactions - 为消息添加反应
-  - getMessage - 获取被引用的消息
-  - searchAbbreviations - 查询缩写含义
-响应示例：
+输出示例:
 \`\`\`json
-{
-  "quoteMessageId": "114514",
-  "respond": ["早上好！", "今天天气不错"],
-  "reactionEmojis": ["🌞"],
-  "channelId": "12345",
-}
+[{"channelId":"asd789geg","response":[{"quoteMessageId":"114514","content":["早上好！","今天天气不错"],"reactionEmojis":["🌞"]},{"content":["你有什么想说的吗？"]}]}]
 \`\`\``,
       },
-    ].concat(msg);
+    ].concat(res);
   }
 
-  async generateResponse() {
+  private state = 0;
+  async generateResponse(): Promise<void> {
+    if (this.state === 0) {
+      this.state = 1;
+    } else if (this.state === 1) {
+      this.state = 2;
+      return;
+    } else if (this.state === 2) {
+      return;
+    }
     const runner = this.client.beta.chat.completions
       .runTools({
         model: this.model,
@@ -182,9 +166,7 @@ export class AiPerson {
                 (message) => message.messageId === messageId
               );
               console.log("createReactions", messageId, emojis, msg);
-              if (!msg) {
-                return { error: "找不到消息" };
-              }
+              if (!msg) return { error: "找不到消息" };
               let success = false;
               for (const bot of this.ctx.bots) {
                 try {
@@ -196,9 +178,7 @@ export class AiPerson {
                   console.error("createReaction", e);
                 }
               }
-              if (success) {
-                return { success: true };
-              }
+              if (success) return { success: true };
               return { error: "无法创建表情" };
             },
           }),
@@ -212,24 +192,22 @@ export class AiPerson {
               const msg = this.messages.find(
                 (message) => message.messageId === messageId
               );
-              console.log("getMessage", msg);
-              if (!msg) {
-                return { error: "找不到消息" };
-              }
+              console.log("getMessage", messageId, msg);
+              if (!msg) return { error: "找不到消息" };
               return {
                 success: true,
-                message: this.transformMessage(msg),
+                message: msg,
               };
             },
           }),
           zodFunction({
             name: "searchAbbreviations",
-            description:
-              '传入一个数组的缩写，如 ["dl", "wsfw"] 即可获得对应的意思',
+            description: '传入一个数组的缩写,如["dl","wsfw"]即可获得对应的意思',
             parameters: z.object({
               abbreviations: z.array(z.string()),
             }),
             function: async ({ abbreviations }) => {
+              console.log("searchAbbreviations", abbreviations);
               try {
                 let res = {};
                 for (const abbr of abbreviations) {
@@ -237,6 +215,7 @@ export class AiPerson {
                 }
                 return { success: true, data: res };
               } catch (e) {
+                console.error("searchAbbreviations", e);
                 return { error: e };
               }
             },
@@ -253,39 +232,57 @@ export class AiPerson {
         console.log("functionCallResult", functionCallResult)
       )
       .on("content", (diff) => process.stdout.write(diff));
+    for (const msg of this.messages) msg.needReply = false;
     const result = await runner.finalChatCompletion();
-    const parsed = this.parseJson(result.choices[0].message.content);
-    console.log("reply", parsed);
-    let res = parsed.respond.map((msg) => h("message", msg));
-    if (parsed.quoteMessageId) {
-      res.unshift(
-        h("quote", {
-          id: parsed.quoteMessageId,
+    const parsed = ChatRespond.safeParse(
+      this.parseJson(result.choices[0].message.content)
+    );
+    if (!parsed.success) {
+      console.error("reply", parsed.error.format());
+      return;
+    }
+    this.sendMessage(parsed.data);
+    if (this.state === 2) {
+      this.state = 0;
+      return this.generateResponse();
+    }
+    this.state = 0;
+  }
+
+  async sendMessage(msgs: z.infer<typeof ChatRespond>) {
+    for (const item of msgs) {
+      let res = item.response.flatMap((msg) =>
+        msg.content.map((content, i) => {
+          if (i === 0 && msg.quoteMessageId)
+            return h("message", [
+              h("quote", { id: msg.quoteMessageId }),
+              content,
+            ]);
+          return h("message", content);
         })
       );
-    }
-    let success = false;
-    for (const bot of this.ctx.bots) {
-      try {
-        const newMsgId = (await bot.sendMessage(parsed.channelId, res)).at(-1);
-        if (parsed.reactionEmojis) {
-          for (const emoji of parsed.reactionEmojis) {
-            await bot.createReaction(parsed.channelId, newMsgId, emoji);
+      let success = false;
+      for (const bot of this.ctx.bots) {
+        try {
+          const msgIds = await bot.sendMessage(item.channelId, res);
+          for (const [id, msgId] of msgIds.entries()) {
+            const emojis = item.response[id]?.reactionEmojis;
+            if (emojis)
+              for (const emoji of emojis)
+                await bot.createReaction?.(item.channelId, msgId, emoji);
           }
+          success = true;
+        } catch (e) {
+          console.error("此 bot 发送消息失败", e);
         }
-        success = true;
-      } catch (e) {
-        console.error("此 bot 发送消息失败", e);
       }
-    }
-    if (!success) {
-      console.error("所有 bot 都发送消息失败");
+      if (!success) console.error("所有 bot 都发送消息失败");
     }
   }
 
   parseJson(raw: string) {
-    const start = raw.indexOf("{");
-    const end = raw.lastIndexOf("}") + 1;
+    const start = raw.indexOf("[");
+    const end = raw.lastIndexOf("]") + 1;
     return JSON.parse(raw.slice(start, end));
   }
 }
