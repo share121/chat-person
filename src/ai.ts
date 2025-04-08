@@ -1,5 +1,5 @@
 import { Context, h } from "koishi";
-import OpenAI from "openai";
+import OpenAI, { ClientOptions } from "openai";
 import { ChatCompletionMessageParam } from "openai/resources/index.mjs";
 import { zodFunction } from "openai/helpers/zod";
 import { z } from "zod";

@@ -2,6 +2,7 @@ import { Context, Schema, Session } from "koishi";
 import { AiPerson, Message } from "./ai";
 import { getChannel, getGuild, getUser } from "./tools";
 import {} from "@koishijs/plugin-adapter-discord";
+import { ClientOptions } from "openai";
 
 export const name = "chat-person";
 export const inject = ["database"];
@@ -19,27 +20,43 @@ export interface Config {
   hobbies: string[];
   hates: string[];
 }
-export const Config: Schema<Config> = Schema.object({
-  baseURL: Schema.string().default("https://api.deepseek.com"),
-  apiKey: Schema.string().role("secret").required(),
-  model: Schema.string().default("deepseek-chat"),
-  fitCtxSize: Schema.number().default(3),
-  maxCtxSize: Schema.number().default(6),
-  name: Schema.string().default("锐锐"),
-  age: Schema.number().default(12),
-  gender: Schema.string().default("女"),
-  personality: Schema.string().default(
-    "活泼可爱，喜欢和朋友们一起玩耍，喜欢听故事，喜欢帮助别人，喜欢学习新知识，喜欢探索未知的世界。"
-  ),
-  profession: Schema.string().default("数学课代表"),
-  hobbies: Schema.array(Schema.string()).default([
-    "数学",
-    "编程",
-    "绘画",
-    "唱歌",
-  ]),
-  hates: Schema.array(Schema.string()).default(["语文", "英语"]),
-});
+export const Config: Schema<Config> = Schema.intersect([
+  Schema.object({
+    baseURL: Schema.string()
+      .default("https://api.deepseek.com")
+      .description("API 地址"),
+    apiKey: Schema.string().role("secret").required().description("API 密钥"),
+    model: Schema.string().default("deepseek-chat").description("模型名称"),
+    fitCtxSize: Schema.number()
+      .default(3)
+      .description(
+        "截断后上下文大小，当上下文超过 `maxCtxSize` 后，会截断到 `fitCtxSize`，一条消息算一个上下文"
+      ),
+    maxCtxSize: Schema.number()
+      .default(6)
+      .description(
+        "最大上下文大小，当上下文超过 `maxCtxSize` 后，会截断到 `fitCtxSize`，一条消息算一个上下文"
+      ),
+  }).description("基础配置"),
+  Schema.object({
+    name: Schema.string().default("锐锐").description("名字"),
+    age: Schema.number().default(12).description("年龄"),
+    gender: Schema.string().default("女").description("性别"),
+    personality: Schema.string()
+      .default(
+        "活泼可爱，喜欢和朋友们一起玩耍，喜欢听故事，喜欢帮助别人，喜欢学习新知识，喜欢探索未知的世界。"
+      )
+      .description("性格"),
+    profession: Schema.string().default("数学课代表").description("职业"),
+    hobbies: Schema.array(Schema.string())
+      .default(["数学", "编程", "绘画", "唱歌"])
+      .description("爱好"),
+    hates: Schema.array(Schema.string())
+      .default(["语文", "英语"])
+      .description("讨厌的事物"),
+  }).description("人格设置"),
+  // Schema.object({}).description("高级配置"),
+]);
 
 declare module "koishi" {
   interface Tables {
