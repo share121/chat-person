@@ -54,6 +54,12 @@ export class AiPerson {
   fitCtxSize: number;
   maxCtxSize: number;
   ctxSize = 0;
+  headers: Record<string, string> = {};
+  query: Record<string, string> = {};
+  maxRetries: number;
+  organization: string;
+  project: string;
+  timeout: number;
 
   constructor(config: typeof AiPerson.prototype) {
     this.name = config.name;
@@ -68,9 +74,21 @@ export class AiPerson {
     this.apiKey = config.apiKey;
     this.fitCtxSize = config.fitCtxSize;
     this.maxCtxSize = config.maxCtxSize;
+    this.headers = config.headers;
+    this.query = config.query;
+    this.maxRetries = config.maxRetries;
+    this.organization = config.organization;
+    this.project = config.project;
+    this.timeout = config.timeout;
     this.client = new OpenAI({
       apiKey: this.apiKey,
       baseURL: this.baseURL,
+      defaultHeaders: this.headers,
+      defaultQuery: this.query,
+      maxRetries: this.maxRetries,
+      organization: this.organization,
+      project: this.project,
+      timeout: this.timeout,
     });
     this.ctx = config.ctx;
     this.ctx.database

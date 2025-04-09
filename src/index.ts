@@ -2,7 +2,6 @@ import { Context, Schema, Session } from "koishi";
 import { AiPerson, Message } from "./ai";
 import { getChannel, getGuild, getUser } from "./tools";
 import {} from "@koishijs/plugin-adapter-discord";
-import { ClientOptions } from "openai";
 
 export const name = "chat-person";
 export const inject = ["database"];
@@ -19,6 +18,12 @@ export interface Config {
   profession: string;
   hobbies: string;
   hates: string;
+  headers: Record<string, string>;
+  query: Record<string, string>;
+  maxRetries: number;
+  organization: string;
+  project: string;
+  timeout: number;
 }
 export const Config: Schema<Config> = Schema.intersect([
   Schema.object({
@@ -51,7 +56,14 @@ export const Config: Schema<Config> = Schema.intersect([
     hobbies: Schema.string().default("数学,编程,绘画,唱歌").description("爱好"),
     hates: Schema.string().default("语文,英语").description("讨厌的事物"),
   }).description("人格设置"),
-  // Schema.object({}).description("高级配置"),
+  Schema.object({
+    headers: Schema.dict(String).description("请求头"),
+    query: Schema.dict(String).description("查询参数"),
+    maxRetries: Schema.number().default(3).description("最大重试次数"),
+    organization: Schema.string().description("组织"),
+    project: Schema.string().description("项目"),
+    timeout: Schema.number().description("超时时间 (ms)"),
+  }).description("高级配置"),
 ]);
 
 declare module "koishi" {
